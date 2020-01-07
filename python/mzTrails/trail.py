@@ -2,7 +2,7 @@ import das
 import bakeUtils
 class Blaze(object):
 
-    def __init__(self, name="trail", sections=5, p=None, emit=None, frange=[]):
+    def __init__(self, name="trail", p=None, emit=None, frange=[]):
         super(Blaze, self).__init__()
 
         self.emit = emit
@@ -14,7 +14,6 @@ class Blaze(object):
         self.nodes.rangeNodes = []
         self.name = name
         self.maxDiv = 0
-        self.sections = sections
         self.reduce = 0.7
 
         if not frange:
@@ -39,9 +38,11 @@ class Blaze(object):
         mins = maya.cmds.createNode("addDoubleLinear",      n="%s_minus" % self.name)
         rebu = maya.cmds.createNode("rebuildCurve",         n="%s_rebuild" % self.name)
         choi = maya.cmds.createNode("choice",               n="%s_choice" % self.name)
+        mult = maya.cmds.createNode("multiplyDivide",       n="%s_multiplier" % self.name)
         clmp = maya.cmds.createNode("clamp",                n="%s_clamp" % self.name)
 
         maya.cmds.addAttr(curv, ln="frame", at="float", min = self.frange[0], max = self.frange[1], k=True)
+        maya.cmds.addAttr(curv, ln="multiplier", at="float", min = 1, max = 4, k=True)
         maya.cmds.addAttr(curv, ln="spanType", at="enum", en="frame:uniform:", k=True)
         maya.cmds.addAttr(curv, ln="count", at="long", min=3, k=True)
 
@@ -55,7 +56,9 @@ class Blaze(object):
         maya.cmds.connectAttr("%s.output" % mins, "%s.inputR" % clmp)
         maya.cmds.connectAttr("%s.outputR" % clmp, "%s.input[0]" % choi)
         maya.cmds.connectAttr("%s.count" % curv, "%s.input[1]" % choi)
-        maya.cmds.connectAttr("%s.output" % choi, "%s.spans" % rebu)
+        maya.cmds.connectAttr("%s.output" % choi, "%s.input1X" % mult)
+        maya.cmds.connectAttr("%s.multiplier" % curv, "%s.input2X" % mult)
+        maya.cmds.connectAttr("%s.outputX" % mult, "%s.spans" % rebu)
 
         maya.cmds.setAttr("%s.isoparmDirection" % cfos, 1)
         maya.cmds.setAttr("%s.relativeValue" % cfos, 0)
@@ -81,23 +84,26 @@ class Blaze(object):
  
 
     def draw(self, verbose=False, dryrun=False):
+        maya.cmds.refresh(su=True)
+        maya.cmds.setAttr("%s.enable" % self.p, True)
         frame = maya.cmds.currentTime(q=True)
         cid=0
         prepend = []
         for i in range(int(self.frange[0]), int(self.frange[1]+1)):
-            maya.cmds.refresh(su=True)
+         
             maya.cmds.currentTime(i)
-            particles = maya.cmds.getAttr("%s.position" % p) or []
-            basePos = maya.cmds.getAttr("%s.t" % self.emit)[0]
+            particles = maya.cmds.getAttr("%s.position" % self.p) or []
+            baseMat = maya.cmds.getAttr("%s.worldMatrix" % self.emit)
+            basePos = (baseMat[12], baseMat[13], baseMat[14])
 
             if not particles:
-                prepend =  [maya.cmds.getAttr("%s.t" % emit, time=(self.frange[0]-1))[0], 
-                            maya.cmds.getAttr("%s.t" % emit, time=(self.frange[0]-2))[0],
-                            maya.cmds.getAttr("%s.t" % emit, time=(self.frange[0]-3))[0]]
+                prepend =  [maya.cmds.getAttr("%s.worldMatrix" % self.emit, time=(self.frange[0]-1)), 
+                            maya.cmds.getAttr("%s.worldMatrix" % self.emit, time=(self.frange[0]-2)),
+                            maya.cmds.getAttr("%s.worldMatrix" % self.emit, time=(self.frange[0]-3))]
             if prepend:
-                particles.insert(0, prepend[0])
-                particles.insert(0, prepend[1])
-                particles.insert(0, prepend[2])
+                particles.insert(0, (prepend[0][12], prepend[0][13], prepend[0][14]))
+                particles.insert(0, (prepend[1][12], prepend[1][13], prepend[1][14]))
+                particles.insert(0, (prepend[2][12], prepend[2][13], prepend[2][14]))
 
             particles.append(basePos)
             particles.reverse()
@@ -119,16 +125,18 @@ class Blaze(object):
 
         maya.cmds.setAttr("%s.v" % self.nodes.group, False)
         maya.cmds.setAttr("%s.frame" % self.nodes.curve, frame)
+        maya.cmds.setAttr("%s.count" % self.nodes.curve, self.maxDiv)
+        maya.cmds.setAttr("%s.enable" % self.p, False)
         maya.cmds.refresh(su=False)
         
         maya.cmds.currentTime(frame)
+        
         maya.cmds.select(self.nodes.curve)
 
         if verbose or dryrun:
             das.pprint(self.nodes)
-
-trail = Blaze(p="nParticleShape1", emit="emitter1")
+            
+trail = Blaze(p="nParticleShape1", emit="emitter1")        
 trail.build()
 trail.draw()
 
-maya.cmds.getAttr("emitter1.t", time=(0))[0]
