@@ -1,5 +1,4 @@
 import das
-import bakeUtils
 class Blaze(object):
 
     def __init__(self, name="trail", p=None, emit=None, frange=[]):
@@ -41,23 +40,25 @@ class Blaze(object):
         mult = maya.cmds.createNode("multiplyDivide",       n="%s_multiplier" % self.name)
         clmp = maya.cmds.createNode("clamp",                n="%s_clamp" % self.name)
 
-        maya.cmds.addAttr(curv, ln="frame", at="float", min = self.frange[0], max = self.frange[1], k=True)
-        maya.cmds.addAttr(curv, ln="multiplier", at="float", min = 1, max = 4, k=True)
-        maya.cmds.addAttr(curv, ln="spanType", at="enum", en="frame:uniform:", k=True)
-        maya.cmds.addAttr(curv, ln="count", at="long", min=3, k=True)
+        obj = maya.cmds.listRelatives(curv, p=True)[0]
+
+        maya.cmds.addAttr(obj, ln="frame", at="float", min = self.frange[0], max = self.frange[1], k=True)
+        maya.cmds.addAttr(obj, ln="multiplier", at="float", min = 1, max = 4, k=True)
+        maya.cmds.addAttr(obj, ln="spanType", at="enum", en="frame:uniform:", k=True)
+        maya.cmds.addAttr(obj, ln="count", at="long", min=3, k=True)
 
         maya.cmds.connectAttr("%s.outputCurve" % cfos, "%s.inputCurve" % rebu )
         maya.cmds.connectAttr("%s.outputCurve" % rebu, "%s.create" % curv )
         maya.cmds.connectAttr("%s.outputSurface" % loft, "%s.create" % surf )
         maya.cmds.connectAttr("%s.outputSurface" % loft, "%s.inputSurface" % cfos )
-        maya.cmds.connectAttr("%s.spanType" % curv, "%s.selector" % choi )
-        maya.cmds.connectAttr("%s.frame" % curv, "%s.input1" % mins)
+        maya.cmds.connectAttr("%s.spanType" % obj, "%s.selector" % choi )
+        maya.cmds.connectAttr("%s.frame" % obj, "%s.input1" % mins)
+        maya.cmds.connectAttr("%s.count" % obj, "%s.input[1]" % choi)
+        maya.cmds.connectAttr("%s.multiplier" % obj, "%s.input2X" % mult)
         maya.cmds.connectAttr("%s.output" % mins, "%s.isoparmValue" % cfos)
         maya.cmds.connectAttr("%s.output" % mins, "%s.inputR" % clmp)
         maya.cmds.connectAttr("%s.outputR" % clmp, "%s.input[0]" % choi)
-        maya.cmds.connectAttr("%s.count" % curv, "%s.input[1]" % choi)
         maya.cmds.connectAttr("%s.output" % choi, "%s.input1X" % mult)
-        maya.cmds.connectAttr("%s.multiplier" % curv, "%s.input2X" % mult)
         maya.cmds.connectAttr("%s.outputX" % mult, "%s.spans" % rebu)
 
         maya.cmds.setAttr("%s.isoparmDirection" % cfos, 1)
@@ -75,6 +76,7 @@ class Blaze(object):
 
         nodes = {   "group" : grup,
                     "curve" : curv,
+                    "ctl" : obj,
                     "surface" : surf,
                     "loft" : loft,
                     "curveFromSurface" : cfos}
@@ -85,7 +87,11 @@ class Blaze(object):
 
     def draw(self, verbose=False, dryrun=False):
         maya.cmds.refresh(su=True)
-        maya.cmds.setAttr("%s.enable" % self.p, True)
+
+        if self.nodes["curves"]:
+            maya.cmds.delete(self.nodes["curves"])
+
+        maya.cmds.setAttr("%s.isDynamic" % self.p, True)
         frame = maya.cmds.currentTime(q=True)
         cid=0
         prepend = []
@@ -126,7 +132,7 @@ class Blaze(object):
         maya.cmds.setAttr("%s.v" % self.nodes.group, False)
         maya.cmds.setAttr("%s.frame" % self.nodes.curve, frame)
         maya.cmds.setAttr("%s.count" % self.nodes.curve, self.maxDiv)
-        maya.cmds.setAttr("%s.enable" % self.p, False)
+        maya.cmds.setAttr("%s.isDynamic" % self.p, False)
         maya.cmds.refresh(su=False)
         
         maya.cmds.currentTime(frame)
@@ -136,7 +142,7 @@ class Blaze(object):
         if verbose or dryrun:
             das.pprint(self.nodes)
             
-trail = Blaze(p="nParticleShape1", emit="emitter1")        
-trail.build()
-trail.draw()
+# trail = Blaze(p="nParticleShape1", emit="emitter1")        
+# trail.build()
+# trail.draw()
 
