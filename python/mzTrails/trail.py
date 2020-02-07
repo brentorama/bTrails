@@ -130,8 +130,8 @@ class Blaze(object):
             maya.cmds.connectAttr("%s.worldSpace[0]" % shape, "%s.inputCurve[%s]" % (self.nodes.loft, id))
 
         maya.cmds.setAttr("%s.v" % self.nodes.group, False)
-        maya.cmds.setAttr("%s.frame" % self.nodes.curve, frame)
-        maya.cmds.setAttr("%s.count" % self.nodes.curve, self.maxDiv)
+        maya.cmds.setAttr("%s.frame" % self.nodes.ctl, frame)
+        maya.cmds.setAttr("%s.count" % self.nodes.ctl, self.maxDiv)
         maya.cmds.setAttr("%s.isDynamic" % self.p, False)
         maya.cmds.refresh(su=False)
         
@@ -142,7 +142,14 @@ class Blaze(object):
         if verbose or dryrun:
             das.pprint(self.nodes)
             
+trail = Blaze(p="nParticleShape1", emit="emitter1")        
+trail.build()
+trail.draw()
+
+
+            
 # trail = Blaze(p="nParticleShape1", emit="emitter1")        
 # trail.build()
 # trail.draw()
 
+#Trail doesnt handle dying particles!!
