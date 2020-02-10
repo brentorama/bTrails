@@ -8,9 +8,6 @@ class Blaze(object):
         self.p = p
         self.nodes = das.Struct()
         self.nodes.curves = das.Struct()
-        self.nodes.lofts = []
-        self.nodes.choiceNodes = []
-        self.nodes.rangeNodes = []
         self.name = name
         self.maxDiv = 0
         self.reduce = 0.7
@@ -46,6 +43,7 @@ class Blaze(object):
         maya.cmds.addAttr(obj, ln="multiplier", at="float", min = 1, max = 4, k=True)
         maya.cmds.addAttr(obj, ln="spanType", at="enum", en="frame:uniform:", k=True)
         maya.cmds.addAttr(obj, ln="count", at="long", min=3, k=True)
+        maya.cmds.addAttr(obj, ln="curves", at="message")
 
         maya.cmds.connectAttr("%s.outputCurve" % cfos, "%s.inputCurve" % rebu )
         maya.cmds.connectAttr("%s.outputCurve" % rebu, "%s.create" % curv )
@@ -79,77 +77,106 @@ class Blaze(object):
                     "ctl" : obj,
                     "surface" : surf,
                     "loft" : loft,
-                    "curveFromSurface" : cfos}
+                    "curveFromSurface" : cfos,
+                    "particle" : self.p,
+                    "emitter" : self.emit}
 
         for node in nodes:
+            maya.cmds.addAttr(obj, ln=node, at="message")
+            try:
+                maya.cmds.addAttr(nodes[node], ln=self.name, at="message")
+            except:
+                print("Bad Att")
+            maya.cmds.connectAttr("%s.%s" % (obj, node), "%s.%s" % (nodes[node], self.name))
             self.nodes[node] = nodes[node]
  
+
+    def getParticles(self, p=None, start=0, end=1):
+
+        particles = {}
+        maya.cmds.setAttr("%s.isDynamic" % p, True)
+
+        for frame in range(start, end):
+            maya.cmds.currentTime(frame)
+            pPos = maya.cmds.getAttr("%s.position" % p) or []
+            particles[frame] = pPos
+
+        maya.cmds.setAttr("%s.isDynamic" % p, False)
+
+        return particles
+
+
+    def makeCurves(self, points=None, emit=None):
+        curves = das.Struct()
+        cid = 0
+        for frame in points:
+
+            for i in range(1,3):
+                if len(points[frame]) < i:
+                    wMatrix = maya.cmds.getAttr("%s.worldMatrix" % emit, time=(frame-i))
+                    points[frame].insert(0, (wMatrix[12], wMatrix[13], wMatrix[14]))
+
+            baseMat = maya.cmds.getAttr("%s.worldMatrix" % emit, time = frame+1)
+            points[frame].append((baseMat[12], baseMat[13], baseMat[14]))
+            points[frame].reverse()
+
+            c = maya.cmds.curve(p = points[frame]) or None
+            shape = maya.cmds.listRelatives(c, s=True) or []
+
+            d = {   "shape" : shape[0],
+                    "id" : cid}
+
+            cid += 1
+            curves[c] = d
+            spans = maya.cmds.getAttr("%s.spans" % c)
+            if spans > self.maxDiv:
+                self.maxDiv = spans
+
+        return curves
+
+
 
     def draw(self, verbose=False, dryrun=False):
         maya.cmds.refresh(su=True)
 
-        if self.nodes["curves"]:
-            maya.cmds.delete(self.nodes["curves"])
-
-        maya.cmds.setAttr("%s.isDynamic" % self.p, True)
         frame = maya.cmds.currentTime(q=True)
-        cid=0
-        prepend = []
-        for i in range(int(self.frange[0]), int(self.frange[1]+1)):
-         
-            maya.cmds.currentTime(i)
-            particles = maya.cmds.getAttr("%s.position" % self.p) or []
-            baseMat = maya.cmds.getAttr("%s.worldMatrix" % self.emit)
-            basePos = (baseMat[12], baseMat[13], baseMat[14])
 
-            if not particles:
-                prepend =  [maya.cmds.getAttr("%s.worldMatrix" % self.emit, time=(self.frange[0]-1)), 
-                            maya.cmds.getAttr("%s.worldMatrix" % self.emit, time=(self.frange[0]-2)),
-                            maya.cmds.getAttr("%s.worldMatrix" % self.emit, time=(self.frange[0]-3))]
-            if prepend:
-                particles.insert(0, (prepend[0][12], prepend[0][13], prepend[0][14]))
-                particles.insert(0, (prepend[1][12], prepend[1][13], prepend[1][14]))
-                particles.insert(0, (prepend[2][12], prepend[2][13], prepend[2][14]))
+        if self.nodes.curves:
+            maya.cmds.delete(self.nodes.curves)
 
-            particles.append(basePos)
-            particles.reverse()
-            c = maya.cmds.curve(p = particles)
-            d = {   "shape" : maya.cmds.listRelatives(c, s=True)[0],
-                    "id" : cid}
-            cid += 1
-            self.nodes.curves[c] = d
-            maya.cmds.parent(c, self.nodes.group)
-            self.maxDiv = maya.cmds.getAttr("%s.spans" % c)
-
+        particles = self.getParticles(start = int(self.frange[0]), end = int(self.frange[1]+1), p=self.p)
+        curves = self.makeCurves(points=particles, emit=self.emit)
+        self.nodes.curves = curves
         numCurves = len(self.nodes.curves)
             
         for c in self.nodes.curves:
-            maya.cmds.rebuildCurve(c, s=self.maxDiv)
-            id = self.nodes.curves[c].id
-            shape = self.nodes.curves[c].shape
-            maya.cmds.connectAttr("%s.worldSpace[0]" % shape, "%s.inputCurve[%s]" % (self.nodes.loft, id))
-
+            maya.cmds.addAttr(self.nodes.curves[c].shape, ln=self.name, at="message")
+            maya.cmds.connectAttr("%s.curves" % self.nodes.ctl, "%s.%s" % (self.nodes.curves[c].shape, self.name))
+            maya.cmds.parent(c, self.nodes.group)
+            try:
+                maya.cmds.rebuildCurve(c, s=self.maxDiv)
+                maya.cmds.connectAttr("%s.worldSpace[0]" % self.nodes.curves[c].shape, "%s.inputCurve[%s]" % (self.nodes.loft, self.nodes.curves[c].id))
+            except:
+                continue
+                
+                
         maya.cmds.setAttr("%s.v" % self.nodes.group, False)
         maya.cmds.setAttr("%s.frame" % self.nodes.ctl, frame)
         maya.cmds.setAttr("%s.count" % self.nodes.ctl, self.maxDiv)
-        maya.cmds.setAttr("%s.isDynamic" % self.p, False)
         maya.cmds.refresh(su=False)
         
         maya.cmds.currentTime(frame)
-        
-        maya.cmds.select(self.nodes.curve)
+        maya.cmds.select(self.nodes.ctl)
 
         if verbose or dryrun:
             das.pprint(self.nodes)
-            
+                
+
+
 trail = Blaze(p="nParticleShape1", emit="emitter1")        
 trail.build()
 trail.draw()
 
+#points = trail.getParticles(p=trail.p, start=1, end=24)
 
-            
-# trail = Blaze(p="nParticleShape1", emit="emitter1")        
-# trail.build()
-# trail.draw()
-
-#Trail doesnt handle dying particles!!
+#curves = trail.makeCurves(points=points, emit=trail.emit)
